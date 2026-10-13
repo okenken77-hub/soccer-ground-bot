@@ -71,14 +71,18 @@ jobs:
         if: steps.run.outputs.code == '0'
         run: |
           if grep -q '^NEW_OPENINGS_FOUND' result.txt; then
+            sed -n '/^NEW_OPENINGS_FOUND/,$p' result.txt | tail -n +2 | grep . > lines.txt
+            N=$(wc -l < lines.txt)
             {
-              echo "@${{ github.repository_owner }} 新しく空きが出ました。"
+              echo "@${{ github.repository_owner }} 新しく空きが出ました(${N}件)。"
               echo
-              sed -n '/^NEW_OPENINGS_FOUND/,$p' result.txt | tail -n +2 | sed 's/^/- /'
+              echo "時刻は「17-21:30」= 17:00〜21:30 の意味です。予約・問い合わせは各施設へ(電話番号は一覧ページの末尾にあります)。"
               echo
-              echo "最新の一覧: [availability_summary.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/availability_summary.md)"
+              sed 's/^/- /' lines.txt
+              echo
+              echo "全体の一覧: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/availability_summary.md"
             } > issue.md
-            gh issue create --title "空きが出ました $(TZ=Asia/Tokyo date '+%m/%d %H:%M')" --body-file issue.md
+            gh issue create --title "空きが出ました(${N}件) $(TZ=Asia/Tokyo date '+%m/%d %H:%M')" --body-file issue.md
           fi
 
       - name: Fail if the checker crashed

@@ -30,10 +30,24 @@ function todayStr(offsetDays = 0) {
   return jstMidnightUTC.toISOString().slice(0, 10);
 }
 
+// 当日分は(時間が過ぎていたり前日までの受付だったりで)意味が薄いので、明日から数える
+const FIRST_DAY_OFFSET = 1;
+// これより短い空き枠(例: 30分)は通知・一覧から除く
+const MIN_SLOT_MINUTES = 60;
+
 function dateRangeList(days) {
   const list = [];
-  for (let i = 0; i < days; i++) list.push(todayStr(i));
+  for (let i = FIRST_DAY_OFFSET; i < days; i++) list.push(todayStr(i));
   return list;
+}
+
+// "17:00-21:30" や "半B 17:00-19:00" の枠の長さ(分)
+function slotMinutes(r) {
+  const m = String(r).match(/(\d{1,2}:\d{2})-(\d{1,2}:\d{2})$/);
+  return m ? timeToMinutes(m[2]) - timeToMinutes(m[1]) : 0;
+}
+function keepLong(ranges) {
+  return ranges.filter((r) => slotMinutes(r) >= MIN_SLOT_MINUTES);
 }
 
 // 日付単位ステータス: "A"始まり(A01=ネット予約可 / A02=電話・窓口受付など)を空きとして扱う
@@ -172,7 +186,7 @@ async function fetchHiroshimaNightSlotsForDate(cookie, facility, date) {
   };
   const fmt = (iv) => `${minutesToTime(iv.from)}-${minutesToTime(iv.to)}`;
 
-  if (!facility.multiCourt) return nightRanges(courts[0]).map(fmt);
+  if (!facility.multiCourt) return keepLong(nightRanges(courts[0]).map(fmt));
 
   // 複数区画: 「全面」「半A」のように区画名を付ける。全面が空いている時間帯に含まれる半面は省く
   const shortName = (n) => String(n).normalize("NFKC").replace("1/2", "半");
@@ -186,7 +200,7 @@ async function fetchHiroshimaNightSlotsForDate(cookie, facility, date) {
       out.push(p.name + " " + fmt(iv));
     }
   }
-  return out;
+  return keepLong(out);
 }
 
 async function fetchHiroshimaNightSlots(facility, dates, dayStatus) {
@@ -219,7 +233,7 @@ async function fetchHiroshimaNightSlots(facility, dates, dayStatus) {
 
 async function collectHiroshima() {
   const cookie = await getYoyacoolCookie();
-  const start = todayStr(0);
+  const start = todayStr(FIRST_DAY_OFFSET);
   const end = todayStr(DAYS_AHEAD);
   const dates = dateRangeList(DAYS_AHEAD);
   const result = {};
@@ -362,13 +376,13 @@ async function collectKanonSchedule(docs, prevSchedule) {
 function kanonTargetSlots(schedule, holidaySet = HOLIDAYS) {
   const out = {};
   if (!schedule || !schedule.byDate) return out;
-  const today = todayStr(0);
+  const today = todayStr(FIRST_DAY_OFFSET);
   for (const date of Object.keys(schedule.byDate).sort()) {
     if (date < today) continue;
     const off = isOffDay(date, holidaySet);
     const slots = [];
     for (const court of Object.keys(schedule.byDate[date])) {
-      const ranges = off ? schedule.byDate[date][court] : clipToNight(schedule.byDate[date][court]);
+      const ranges = off ? keepLong(schedule.byDate[date][court]) : clipToNight(schedule.byDate[date][court]);
       for (const r of ranges) slots.push(court + " " + r);
     }
     if (slots.length) out[date] = slots;
@@ -376,12 +390,18 @@ function kanonTargetSlots(schedule, holidaySet = HOLIDAYS) {
   return out;
 }
 
+// 通知1行分。日付順に並べ替えるため date を持たせる
+function notifyLine(date, venue, city, detail) {
+  const label = formatDateJa(date) + (HOLIDAYS.has(date) ? "(祝)" : "");
+  return { date, text: label + " " + venue + "〔" + city + "〕 " + detail };
+}
+
 function diffKanon(prev, curr, prevSchedule, currSchedule) {
   const lines = [];
   if (Array.isArray(prev) && Array.isArray(curr)) {
     const prevUrls = new Set(prev.map((d) => d.url));
     for (const d of curr.filter((d) => !prevUrls.has(d.url))) {
-      lines.push("[広島市] " + KANON.label + " 新しい資料が公開されました: " + d.title);
+      lines.push({ date: "9999-12-31", text: KANON.label + "〔広島市〕 新しい予定表・資料が公開されました: " + d.title });
     }
   }
   if (prevSchedule && currSchedule && prevSchedule.url !== currSchedule.url) {
@@ -391,7 +411,7 @@ function diffKanon(prev, curr, prevSchedule, currSchedule) {
       const prevSet = new Set(prevSlots[date] || []);
       const added = currSlots[date].filter((x) => !prevSet.has(x));
       if (added.length && (date in prevSlots || prevSchedule.byDate[date])) {
-        lines.push("[広島市] " + KANON.label + " " + date + " に空き(予定表更新): " + added.join(", "));
+        lines.push(notifyLine(date, KANON.label, "広島市", "空き(予定表の更新) " + added.map(compactRange).join(", ")));
       }
     }
   }
@@ -416,7 +436,7 @@ function diffHiroshima(prev, curr) {
         const currStatus = currByDate[date];
         if (prevStatus === undefined) continue; // 前回未追跡の日は比較対象外
         if (!isAvailableStatus(prevStatus) && isAvailableStatus(currStatus) && isOffDay(date)) {
-          lines.push(`[${facility.city || "広島市"}] ${facility.name}(${facility.area}) ${date} に空きが出ました`);
+          lines.push(notifyLine(date, facility.name, facility.city || "広島市", "空きあり(時間帯は予約システムで確認)"));
         }
       }
     }
@@ -429,11 +449,9 @@ function diffHiroshima(prev, curr) {
         const currIntervals = currNight[date];
         if (prevIntervals === undefined || currIntervals === undefined) continue;
         const prevSet = new Set(prevIntervals);
-        const newIntervals = currIntervals.filter((iv) => !prevSet.has(iv));
+        const newIntervals = keepLong(currIntervals.filter((iv) => !prevSet.has(iv)));
         if (newIntervals.length > 0) {
-          lines.push(
-            `[${facility.city || "広島市"}] ${facility.name}(${facility.area}) ${date} に夜間の空き時間が発生: ${newIntervals.join(", ")}`
-          );
+          lines.push(notifyLine(date, facility.name, facility.city || "広島市", "夜間 " + newIntervals.map(compactRange).join(", ")));
         }
       }
     }
@@ -454,11 +472,9 @@ function diffHatsukaichi(prev, curr) {
       if (prevIntervals === undefined) continue;
       const prevSet = new Set(prevIntervals);
       let newIntervals = currIntervals.filter((iv) => !prevSet.has(iv));
-      if (!isOffDay(date)) newIntervals = clipToNight(newIntervals);
+      newIntervals = isOffDay(date) ? keepLong(newIntervals) : clipToNight(newIntervals);
       if (newIntervals.length > 0) {
-        lines.push(
-          `[廿日市市] ${group.label} ${date} に空き時間が発生: ${newIntervals.join(", ")}`
-        );
+        lines.push(notifyLine(date, group.label, "廿日市市", (isOffDay(date) ? "" : "夜間 ") + newIntervals.map(compactRange).join(", ")));
       }
     }
   }
@@ -510,7 +526,7 @@ function clipToNight(intervals) {
     const to = timeToMinutes(toStr);
     if (from < to) result.push(`${minutesToTime(from)}-${minutesToTime(to)}`);
   }
-  return result;
+  return keepLong(result);
 }
 
 // 狙い目: 平日は夜間(18:00以降)のみ、土日・祝日は全日(全時間帯)を対象にする。
@@ -569,7 +585,7 @@ function buildTargetSection(state) {
       .sort()
       .map((d) => {
         const off = isOffDay(d, holidays);
-        const slots = off ? byDate[d] || [] : clipToNight(byDate[d] || []);
+        const slots = off ? keepLong(byDate[d] || []) : clipToNight(byDate[d] || []);
         return slots.length ? entryHtml(d, slots.join(", "), off) : null;
       })
       .filter(Boolean);
@@ -637,7 +653,7 @@ function compactRange(r) {
 function groupCourts(perCourt, clip) {
   const byKey = {};
   for (const court of Object.keys(perCourt).sort()) {
-    const ranges = clip ? clipToNight(perCourt[court]) : perCourt[court];
+    const ranges = clip ? clipToNight(perCourt[court]) : keepLong(perCourt[court]);
     if (!ranges.length) continue;
     const key = ranges.map(compactRange).join(", ");
     (byKey[key] = byKey[key] || []).push(court);
@@ -669,10 +685,11 @@ function matrixCell(venue, date, state, holidaySet, nightOnly) {
     const byDate = state.hatsukaichi[venue.key];
     const free = byDate ? byDate[date] : undefined;
     if (free === undefined) return { text: "–", level: "na" };
-    if (!free.length) return { text: "×", level: "none" };
+    const usable = keepLong(free);
+    if (!usable.length) return { text: "×", level: "none" };
     const night = clipToNight(free);
     const target = off || night.length > 0;
-    return { text: free.map(compactRange).join(", "), level: target ? "target" : "avail" };
+    return { text: usable.map(compactRange).join(", "), level: target ? "target" : "avail" };
   }
   if (venue.type === "kanon") {
     const sched = state.kanonSchedule;
@@ -1041,7 +1058,9 @@ async function main() {
     ...diffHiroshima(prevState.hiroshima, hiroshima),
     ...diffHatsukaichi(prevState.hatsukaichi, hatsukaichi),
     ...diffKanon(prevState.kanon, kanon, prevState.kanonSchedule, kanonSchedule),
-  ];
+  ]
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.text < b.text ? -1 : 1))
+    .map((l) => l.text);
 
   if (lines.length === 0) {
     console.log("NO_CHANGES");
