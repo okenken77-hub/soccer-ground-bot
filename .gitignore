@@ -1,1 +1,9 @@
 node_modules/
+*.html
+run.log
+共有ログ.md
+*.bat
+*.ps1
+result.txt
+stderr.txt
+issue.md

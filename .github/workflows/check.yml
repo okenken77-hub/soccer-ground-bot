@@ -1,0 +1,71 @@
+name: check-availability
+
+on:
+  schedule:
+    - cron: "5 */3 * * *" # UTC。日本時間では 9:05, 12:05, 15:05 ... の約3時間ごと
+  workflow_dispatch:
+
+concurrency:
+  group: check-availability
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run checker
+        id: run
+        run: |
+          set +e
+          node check_availability.js > result.txt 2> stderr.txt
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+          echo "--- stdout ---"; cat result.txt
+          echo "--- stderr ---"; cat stderr.txt
+
+      - name: Commit latest state and summary
+        if: steps.run.outputs.code == '0'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.json availability_summary.md
+          if ! git diff --cached --quiet; then
+            git commit -m "update: $(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M')"
+            git pull --rebase origin "${GITHUB_REF_NAME}" || true
+            git push
+          fi
+
+      - name: Notify by issue (new openings only)
+        if: steps.run.outputs.code == '0'
+        run: |
+          if grep -q '^NEW_OPENINGS_FOUND' result.txt; then
+            {
+              echo "@${{ github.repository_owner }} 新しく空きが出ました。"
+              echo
+              sed -n '/^NEW_OPENINGS_FOUND/,$p' result.txt | tail -n +2 | sed 's/^/- /'
+              echo
+              echo "最新の一覧: [availability_summary.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/availability_summary.md)"
+            } > issue.md
+            gh issue create --title "空きが出ました $(TZ=Asia/Tokyo date '+%m/%d %H:%M')" --body-file issue.md
+          fi
+
+      - name: Fail if the checker crashed
+        if: steps.run.outputs.code != '0'
+        run: |
+          echo "checker failed (exit ${{ steps.run.outputs.code }})"
+          exit 1
