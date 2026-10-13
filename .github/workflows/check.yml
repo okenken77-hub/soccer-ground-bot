@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "5 */3 * * *" # UTC。日本時間では 9:05, 12:05, 15:05 ... の約3時間ごと
   workflow_dispatch:
+    inputs:
+      test_notify:
+        description: "通知テスト(Issueを1件作ってメールを送る。空きチェックはしない)"
+        type: boolean
+        default: false
 
 concurrency:
   group: check-availability
@@ -14,7 +19,19 @@ permissions:
   issues: write
 
 jobs:
+  notify-test:
+    if: ${{ inputs.test_notify }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Create test issue
+        run: |
+          gh issue create --repo "${{ github.repository }}" --title "テスト通知 $(TZ=Asia/Tokyo date '+%m/%d %H:%M')" --body "@${{ github.repository_owner }} これは通知テストです。このメールが届けば、空きが出たときの通知も届きます。"
+
   check:
+    if: ${{ !inputs.test_notify }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
