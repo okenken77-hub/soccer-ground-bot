@@ -80,6 +80,10 @@ jobs:
               echo
               sed 's/^/- /' lines.txt
               echo
+              echo "## 今のおすすめ TOP5(2時間以上の枠・点数順)"
+              echo
+              cat availability_recommend.md
+              echo
               echo "全体の一覧: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/availability_summary.md"
             } > issue.md
             gh issue create --title "空きが出ました(${N}件) $(TZ=Asia/Tokyo date '+%m/%d %H:%M')" --body-file issue.md

@@ -876,6 +876,133 @@ function longestHours(text) {
   return best;
 }
 
+// ---------- おすすめ(点数付け) ----------
+
+// 予約・問い合わせ先(分かるもの)。未登録の広島市の施設は予約システム(ネット)で申し込む。
+const CONTACTS = {
+  "0825": "0829-40-5100",
+  "8020": "082-286-3274",
+  "8021": "082-286-3274",
+  kanon: "082-233-1012",
+  greenfield: "0829-31-5980",
+  shohoku: "0829-31-5980",
+  suncherry_field: "0829-31-5980",
+};
+const DEFAULT_CONTACT = "広島市の予約システム(ネット)";
+
+function parseSlotText(str) {
+  const m = String(str).match(/^(.*?)\s*(\d{1,2}:\d{2})-(\d{1,2}:\d{2})$/);
+  if (!m) return null;
+  return { label: m[1].trim(), from: timeToMinutes(m[2]), to: timeToMinutes(m[3]) };
+}
+
+// おすすめ候補になりうる枠を集める(平日=夜間 / 土日祝=全日)
+function collectCandidateSlots(state) {
+  const holidaySet = new Set(state.holidays || []);
+  const dates = Object.keys(state.hatsukaichi[HATSUKAICHI.groups[0].key] || {}).sort();
+  const out = [];
+  const push = (date, venue, city, contact, source, from, to, label) =>
+    out.push({ date, venue, city, contact, source, from, to, label });
+
+  for (const d of dates) {
+    const off = isOffDay(d, holidaySet);
+
+    for (const f of HIROSHIMA.facilities) {
+      if (!f.hasNightFrames) continue;
+      const slots = (state.hiroshima[f.fc] && state.hiroshima[f.fc].night && state.hiroshima[f.fc].night[d]) || [];
+      for (const sl of slots) {
+        const p = parseSlotText(sl);
+        if (p) push(d, f.name, f.city || "広島市", CONTACTS[f.fc] || DEFAULT_CONTACT, "system", p.from, p.to, p.label);
+      }
+    }
+
+    for (const g of HATSUKAICHI.groups) {
+      const free = (state.hatsukaichi[g.key] && state.hatsukaichi[g.key][d]) || [];
+      const ranges = off ? keepLong(free) : clipToNight(free);
+      for (const r of ranges) {
+        const p = parseSlotText(r);
+        if (p) push(d, g.label, "廿日市市", CONTACTS[g.key], g.key === "shohoku" ? "shohoku" : "hatsukaichi", p.from, p.to, "");
+      }
+    }
+
+    const perCourt = state.kanonSchedule && state.kanonSchedule.byDate ? state.kanonSchedule.byDate[d] : null;
+    if (perCourt) {
+      const byRange = {};
+      for (const court of Object.keys(perCourt)) {
+        const ranges = off ? keepLong(perCourt[court]) : clipToNight(perCourt[court]);
+        for (const r of ranges) (byRange[r] = byRange[r] || []).push(court);
+      }
+      for (const r of Object.keys(byRange)) {
+        const p = parseSlotText(r);
+        const courts = byRange[r].sort().join("");
+        if (p) push(d, KANON.label, "広島市", CONTACTS.kanon, "pdf", p.from, p.to, courts.length >= 4 ? "" : courts + "面のみ");
+      }
+    }
+  }
+  return out;
+}
+
+// 点数 = 枠の長さ + 曜日 + データの確かさ。2時間未満は対象外。
+function scoreSlot(s, holidaySet) {
+  const hours = (s.to - s.from) / 60;
+  if (hours < 2) return null;
+  let score = Math.min(hours, 4) * 10;
+  const reasons = [(Number.isInteger(hours) ? hours : hours.toFixed(1)) + "時間"];
+
+  const dow = new Date(s.date + "T00:00:00Z").getUTCDay();
+  if (dow === 6) { score += 15; reasons.push("土曜"); }
+  else if (dow === 0) { score += 15; reasons.push("日曜"); }
+  else if (holidaySet.has(s.date)) { score += 15; reasons.push("祝日"); }
+  else if (dow === 5) { score += 8; reasons.push("金曜夜"); }
+
+  const off = dow === 0 || dow === 6 || holidaySet.has(s.date);
+  if (off) {
+    const eveningOverlap = Math.min(s.to, 21 * 60) - Math.max(s.from, 17 * 60);
+    if (eveningOverlap >= 60) { score += 8; reasons.push("夜に使える"); }
+  }
+
+  if (s.source === "system") { score += 15; reasons.push("予約システムの実データ"); }
+  else if (s.source === "pdf") { score += 6; reasons.push("予定表PDF(公開時点)"); }
+  else if (s.source === "hatsukaichi") { score += 6; }
+  else if (s.source === "shohoku") { reasons.push("空き表示が常に多い施設のため要確認"); }
+
+  if (s.label) { score -= 5; reasons.push(s.label); }
+
+  const daysAhead = Math.round((Date.parse(s.date + "T00:00:00Z") - Date.parse(todayStr(0) + "T00:00:00Z")) / 86400000);
+  if ((s.source === "hatsukaichi" || s.source === "shohoku") && daysAhead > 35) {
+    score -= 8;
+    reasons.push("先の日付は予約が未登録の可能性");
+  }
+  return { score, reasons };
+}
+
+// おすすめTOP(同じ会場は最大2件まで)。{ line, ... } の配列を返す。
+function computeRecommendations(state, limit = 5) {
+  const holidaySet = new Set(state.holidays || []);
+  const scored = collectCandidateSlots(state)
+    .map((s) => ({ s, r: scoreSlot(s, holidaySet) }))
+    .filter((x) => x.r)
+    .sort((a, b) => b.r.score - a.r.score || (a.s.date < b.s.date ? -1 : 1) || a.s.from - b.s.from);
+
+  const perVenue = {};
+  const picks = [];
+  for (const x of scored) {
+    perVenue[x.s.venue] = (perVenue[x.s.venue] || 0) + 1;
+    if (perVenue[x.s.venue] > 2) continue;
+    picks.push(x);
+    if (picks.length >= limit) break;
+  }
+  return picks.map((x, i) => {
+    const s = x.s;
+    const date = formatDateJa(s.date) + (holidaySet.has(s.date) ? "(祝)" : "");
+    const range = compactRange(minutesToTime(s.from) + "-" + minutesToTime(s.to));
+    return (
+      (i + 1) + ". " + date + " " + range + " " + s.venue + "〔" + s.city + "〕 — " +
+      x.r.reasons.join("・") + " / 予約: " + (s.contact || DEFAULT_CONTACT)
+    );
+  });
+}
+
 function generateTextSummary(state) {
   const nightVenues = matrixVenues(true);
   const holidaySet = new Set(state.holidays || []);
@@ -889,6 +1016,16 @@ function generateTextSummary(state) {
   out.push("最終更新: " + checkedAtJst + "(約3時間ごとに自動更新)");
   out.push("夜間 = " + NIGHT_START + "以降。時刻は「17-21:30」= 17:00〜21:30 の意味。");
   out.push("");
+
+  const recs = computeRecommendations(state);
+  out.push("## おすすめ TOP" + Math.max(recs.length, 1));
+  out.push("点数の付け方: 2時間以上続く枠を対象に、長さ・土日祝・データの確かさ(予約システムの実データを優先)で評価。同じ会場は2件まで。");
+  out.push("");
+  if (recs.length) for (const r of recs) out.push(r);
+  else out.push("- 現在、おすすめできる枠(2時間以上)はありません");
+  out.push("");
+  const recText = recs.length ? recs.join("\n") : "(現在、2時間以上のおすすめ枠はありません)";
+  fs.writeFileSync(path.join(__dirname, "availability_recommend.md"), recText + "\n", "utf8");
 
   out.push("## 土日の夜間(" + NIGHT_START + "以降)の空き");
   let month = "";
