@@ -26,7 +26,7 @@ const HIROSHIMA = {
     { name: "太田川緑地安芸大橋グラウンド", area: "広島市安佐南区", fc: "0591", roomCode: "100", roomName: "グラウンド", hasNightFrames: true },
     { name: "倉掛公園", area: "広島市安佐北区", fc: "0613", roomCode: "101", roomName: "グラウンド", hasNightFrames: false },
     { name: "畑賀公園", area: "広島市安芸区", fc: "0782", roomCode: "100", roomName: "グラウンド", hasNightFrames: false },
-    { name: "湯来南庭球場・運動広場", area: "広島市佐伯区", fc: "0825", roomCode: "111", roomName: "運動広場", hasNightFrames: true },
+    { name: "湯来南庭球場・運動広場", area: "広島市佐伯区", fc: "0825", roomCode: "111", roomName: "運動広場", hasNightFrames: true, multiCourt: true },
     // 府中町の施設だが同じ「ひろしま・やまぐち公共施設予約サービス」(団体コード340006)に登録されている。
     // 上段多目的広場は7:00-21:00(1時間単位)で、全面・1/2A・1/2Bの3区画。半面だけ空く日があるため
     // multiCourt で全区画を見る。申込・問合せ: 府中町教育委員会 社会教育課 082-286-3274。
@@ -65,8 +65,9 @@ const HATSUKAICHI = {
       facNames: ["広場全面", "広場半面Ａ", "広場半面Ｂ"],
       openTime: "08:30",
       closeTime: "21:00",
-      // 毎月第1水曜日は定休日
-      closedRule: "first-wednesday",
+      // 本館(サンチェリー)は毎月第1水曜が休館日だが、公式カレンダーでは屋外の多目的広場は
+      // 第1水曜も「予定なし(予約可)」と表示される(2026-10-07で確認)ため、休場扱いにはしない。
+      closedRule: null,
     },
   ],
 };

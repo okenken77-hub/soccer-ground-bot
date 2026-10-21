@@ -32,8 +32,24 @@ function todayStr(offsetDays = 0) {
 
 // 当日分は(時間が過ぎていたり前日までの受付だったりで)意味が薄いので、明日から数える
 const FIRST_DAY_OFFSET = 1;
+// 夜間枠の文字列の書式の版。変えたときは1回だけ差分通知を抑える
+const NIGHT_FORMAT = 2;
 // これより短い空き枠(例: 30分)は通知・一覧から除く
 const MIN_SLOT_MINUTES = 60;
+
+// 一時的な接続エラー(接続タイムアウトなど)で全体が失敗しないよう、最大4回まで再試行する
+async function fetchRetry(url, options) {
+  let lastErr;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      return await fetch(url, options);
+    } catch (err) {
+      lastErr = err;
+      if (attempt < 4) await new Promise((r) => setTimeout(r, attempt * 3000));
+    }
+  }
+  throw lastErr;
+}
 
 function dateRangeList(days) {
   const list = [];
@@ -74,7 +90,7 @@ const HOLIDAYS = new Set(); // yoyacool のカレンダーAPIが返す祝日(YYY
 // ---------- 広島市 (yoyacool) ----------
 
 async function getYoyacoolCookie() {
-  const res = await fetch(
+  const res = await fetchRetry(
     "https://yoyacool.e-harp.jp/facility/FacilitySearch/Index",
     { redirect: "manual" }
   );
@@ -101,7 +117,7 @@ async function fetchHiroshimaFacility(cookie, facility, startDate, endDate) {
     period: 35,
   };
   const url = `https://yoyacool.e-harp.jp/facility/FacilityAvailability/GetCalendar/${HIROSHIMA.lgc}/${facility.fc}`;
-  const res = await fetch(url, {
+  const res = await fetchRetry(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json;charset=utf-8",
@@ -142,7 +158,7 @@ async function fetchHiroshimaNightSlotsForDate(cookie, facility, date) {
     requestId: null,
   };
   const url = `https://yoyacool.e-harp.jp/facility/FacilityAvailability/GetDay/${HIROSHIMA.lgc}/${facility.fc}`;
-  const res = await fetch(url, {
+  const res = await fetchRetry(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json;charset=utf-8",
@@ -189,7 +205,7 @@ async function fetchHiroshimaNightSlotsForDate(cookie, facility, date) {
   if (!facility.multiCourt) return keepLong(nightRanges(courts[0]).map(fmt));
 
   // 複数区画: 「全面」「半A」のように区画名を付ける。全面が空いている時間帯に含まれる半面は省く
-  const shortName = (n) => String(n).normalize("NFKC").replace("1/2", "半");
+  const shortName = (n) => String(n).normalize("NFKC").replace("1/2", "半").replace(/^運動広場/, "");
   const perCourt = courts.map((court) => ({ name: shortName(court.courtName), ranges: nightRanges(court) }));
   const full = perCourt.find((p) => p.name === "全面");
   const covered = (iv) => full && full.ranges.some((f) => f.from <= iv.from && iv.to <= f.to);
@@ -197,7 +213,7 @@ async function fetchHiroshimaNightSlotsForDate(cookie, facility, date) {
   for (const p of perCourt) {
     for (const iv of p.ranges) {
       if (p !== full && covered(iv)) continue;
-      out.push(p.name + " " + fmt(iv));
+      out.push((p === full ? "" : p.name + " ") + fmt(iv));
     }
   }
   return keepLong(out);
@@ -295,7 +311,7 @@ function computeFreeIntervals(openMin, closeMin, bookedIntervals) {
 }
 
 async function collectHatsukaichi() {
-  const res = await fetch(HATSUKAICHI.scheduleUrl);
+  const res = await fetchRetry(HATSUKAICHI.scheduleUrl);
   if (!res.ok) throw new Error(`hatsukaichi schedule.json: HTTP ${res.status}`);
   const events = await res.json();
 
@@ -329,7 +345,7 @@ async function collectHatsukaichi() {
 // 公開されている資料(月間予定表PDFなど)の一覧を取得する。失敗時は null を返し、全体は止めない。
 async function collectKanon(prevSchedule) {
   try {
-    const res = await fetch(KANON.apiUrl, {
+    const res = await fetchRetry(KANON.apiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query: KANON.query }),
@@ -360,7 +376,7 @@ async function collectKanonSchedule(docs, prevSchedule) {
   try {
     const m = doc.title.match(/(\d{4})年(\d{1,2})月/);
     if (!m) throw new Error("タイトルから年月を読み取れません: " + doc.title);
-    const res = await fetch(doc.url);
+    const res = await fetchRetry(doc.url);
     if (!res.ok) throw new Error("PDF HTTP " + res.status);
     const buf = Buffer.from(await res.arrayBuffer());
     const byDate = await parseKanonPdf(buf, Number(m[1]), Number(m[2]));
@@ -921,7 +937,7 @@ function collectCandidateSlots(state) {
       const ranges = off ? keepLong(free) : clipToNight(free);
       for (const r of ranges) {
         const p = parseSlotText(r);
-        if (p) push(d, g.label, "廿日市市", CONTACTS[g.key], g.key === "shohoku" ? "shohoku" : "hatsukaichi", p.from, p.to, "");
+        if (p) push(d, g.label, "廿日市市", CONTACTS[g.key], "hatsukaichi", p.from, p.to, "");
       }
     }
 
@@ -964,12 +980,11 @@ function scoreSlot(s, holidaySet) {
   if (s.source === "system") { score += 15; reasons.push("予約システムの実データ"); }
   else if (s.source === "pdf") { score += 6; reasons.push("予定表PDF(公開時点)"); }
   else if (s.source === "hatsukaichi") { score += 6; }
-  else if (s.source === "shohoku") { reasons.push("空き表示が常に多い施設のため要確認"); }
 
   if (s.label) { score -= 5; reasons.push(s.label); }
 
   const daysAhead = Math.round((Date.parse(s.date + "T00:00:00Z") - Date.parse(todayStr(0) + "T00:00:00Z")) / 86400000);
-  if ((s.source === "hatsukaichi" || s.source === "shohoku") && daysAhead > 35) {
+  if (s.source === "hatsukaichi" && daysAhead > 35) {
     score -= 8;
     reasons.push("先の日付は予約が未登録の可能性");
   }
@@ -1055,7 +1070,7 @@ function generateTextSummary(state) {
   if (!weekdayCount) out.push("- 該当なし");
 
   out.push("", "## 注意");
-  out.push("- 広島市・府中町の施設は予約システムの実データ。廿日市市は予約が登録されていない先の日付ほど「空き」に見えます(12月は特に)。昭北グランドはほぼ常に空きと出るため、利用前に要確認。");
+  out.push("- 広島市・府中町の施設は予約システムの実データ。廿日市市は予約が登録されていない先の日付ほど「空き」に見えます(12月は特に)。11月分は公式カレンダーと突き合わせ済みです。");
   out.push("- 観音新町運動広場は管理者が公開する月間予定表PDFの読み取り(A〜Dは4面の区画)。公開時点の情報で、以降の予約は反映されません。");
   out.push("- 夜間の時間枠が無い広島市の5施設(西風新都東公園・若葉台中央公園・伴西公園・倉掛公園・畑賀公園)は夜の一覧から除外。");
   out.push("- 府中町の施設(揚倉山・空城山公園)は予約受付が約1か月先まで。先の日付は「情報なし」です。");
@@ -1165,6 +1180,7 @@ async function main() {
   const newState = {
     checkedAt: new Date().toISOString(),
     nightStart: NIGHT_START,
+    nightFormat: NIGHT_FORMAT,
     holidays: [...HOLIDAYS].sort(),
     hiroshima,
     hatsukaichi,
@@ -1185,7 +1201,7 @@ async function main() {
   }
 
   // 夜間の開始時刻を変えた直後は、前回の夜間データと比べると誤検知になるため比較から外す
-  if (prevState.nightStart !== NIGHT_START) {
+  if (prevState.nightStart !== NIGHT_START || prevState.nightFormat !== NIGHT_FORMAT) {
     for (const fc of Object.keys(prevState.hiroshima || {})) {
       if (prevState.hiroshima[fc]) prevState.hiroshima[fc].night = null;
     }
