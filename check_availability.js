@@ -995,6 +995,7 @@ function scoreSlot(s, holidaySet) {
 function computeRecommendations(state, limit = 5) {
   const holidaySet = new Set(state.holidays || []);
   const scored = collectCandidateSlots(state)
+    .filter((s) => !(state.hatsukaichiStale && s.source === "hatsukaichi"))
     .map((s) => ({ s, r: scoreSlot(s, holidaySet) }))
     .filter((x) => x.r)
     .sort((a, b) => b.r.score - a.r.score || (a.s.date < b.s.date ? -1 : 1) || a.s.from - b.s.from);
@@ -1030,6 +1031,11 @@ function generateTextSummary(state) {
   out.push("# サッカーグラウンド空き状況(広島市・廿日市市・府中町)");
   out.push("最終更新: " + checkedAtJst + "(約3時間ごとに自動更新)");
   out.push("夜間 = " + NIGHT_START + "以降。時刻は「17-21:30」= 17:00〜21:30 の意味。");
+  if (state.hatsukaichiStale) {
+    const at = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", dateStyle: "medium", timeStyle: "short" }).format(new Date(state.hatsukaichiAt));
+    out.push("");
+    out.push("【注意】廿日市市(グリーンフィールド・昭北グランド・サンチェリー多目的広場)は、公式サイトのメンテナンス等で最新の状況を取得できていません。下の廿日市市の情報は " + at + " 時点のもので、おすすめからも除いています。");
+  }
   out.push("");
 
   const recs = computeRecommendations(state);
@@ -1169,11 +1175,30 @@ async function main() {
     ? JSON.parse(fs.readFileSync(STATE_FILE, "utf8"))
     : null;
 
-  const [hiroshima, hatsukaichi, kanonResult] = await Promise.all([
+  const [hiroshima, hatsukaichiResult, kanonResult] = await Promise.all([
     collectHiroshima(),
-    collectHatsukaichi(),
+    collectHatsukaichi().then(
+      (v) => ({ ok: true, v }),
+      (err) => ({ ok: false, err })
+    ),
     collectKanon(prevState?.kanonSchedule),
   ]);
+
+  // 廿日市市のデータ元(hatsukaichi-sports.net)がメンテナンス等で取れない間は、
+  // 最後に取得できた内容を使い続け、古い旨を一覧に表示する。通知や比較は変化なし扱いになる。
+  let hatsukaichi;
+  let hatsukaichiStale = false;
+  if (hatsukaichiResult.ok) {
+    hatsukaichi = hatsukaichiResult.v;
+  } else if (prevState && prevState.hatsukaichi) {
+    console.error("[warn] 廿日市市の取得に失敗(前回の内容を使用): " + hatsukaichiResult.err.message);
+    hatsukaichi = prevState.hatsukaichi;
+    hatsukaichiStale = true;
+  } else {
+    throw hatsukaichiResult.err;
+  }
+  const nowIso = new Date().toISOString();
+  const hatsukaichiAt = hatsukaichiStale ? prevState.hatsukaichiAt || prevState.checkedAt : nowIso;
   const kanon = kanonResult ? kanonResult.docs : null;
   const kanonSchedule = kanonResult ? kanonResult.schedule : prevState?.kanonSchedule || null;
 
@@ -1181,6 +1206,8 @@ async function main() {
     checkedAt: new Date().toISOString(),
     nightStart: NIGHT_START,
     nightFormat: NIGHT_FORMAT,
+    hatsukaichiStale,
+    hatsukaichiAt,
     holidays: [...HOLIDAYS].sort(),
     hiroshima,
     hatsukaichi,
