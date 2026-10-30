@@ -1,9 +1,9 @@
 {
-  "checkedAt": "2026-10-30T06:49:01.299Z",
+  "checkedAt": "2026-10-30T09:48:42.867Z",
   "nightStart": "17:00",
   "nightFormat": 2,
   "hatsukaichiStale": false,
-  "hatsukaichiAt": "2026-10-30T06:49:01.299Z",
+  "hatsukaichiAt": "2026-10-30T09:48:42.867Z",
   "holidays": [
     "2026-11-03",
     "2026-11-23",
@@ -236,9 +236,7 @@
         ],
         "2026-11-06": [],
         "2026-11-07": [],
-        "2026-11-08": [
-          "半A 20:00-21:00"
-        ],
+        "2026-11-08": [],
         "2026-11-09": [
           "半B 17:00-18:00"
         ],
@@ -1578,11 +1576,11 @@
     },
     {
       "title": "2026年10月～2027年1月観音新町運動広場予約状況（10/29現在）",
-      "url": "https://shinko-sports.jp/info/wp-content/uploads/2026/02/%E6%9C%88%E9%96%93%E4%BA%88%E5%AE%9A%E8%A1%A810%E6%9C%8829%E6%97%A5%E7%8F%BE%E5%9C%A8.pdf"
+      "url": "https://shinko-sports.jp/info/wp-content/uploads/2026/02/%E6%9C%88%E9%96%93%E4%BA%88%E5%AE%9A%E8%A1%A810%E6%9C%8829%E6%97%A5%E7%8F%BE%E5%9C%A8-1.pdf"
     }
   ],
   "kanonSchedule": {
-    "url": "https://shinko-sports.jp/info/wp-content/uploads/2026/02/%E6%9C%88%E9%96%93%E4%BA%88%E5%AE%9A%E8%A1%A810%E6%9C%8829%E6%97%A5%E7%8F%BE%E5%9C%A8.pdf",
+    "url": "https://shinko-sports.jp/info/wp-content/uploads/2026/02/%E6%9C%88%E9%96%93%E4%BA%88%E5%AE%9A%E8%A1%A810%E6%9C%8829%E6%97%A5%E7%8F%BE%E5%9C%A8-1.pdf",
     "title": "2026年10月～2027年1月観音新町運動広場予約状況（10/29現在）",
     "byDate": {
       "2026-10-01": {
@@ -2213,10 +2211,12 @@
           "09:00-14:00"
         ],
         "C": [
-          "09:00-13:00"
+          "09:00-13:00",
+          "17:00-19:00"
         ],
         "D": [
-          "09:00-13:00"
+          "09:00-13:00",
+          "17:00-19:00"
         ]
       },
       "2026-11-27": {
