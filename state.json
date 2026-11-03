@@ -1,9 +1,9 @@
 {
-  "checkedAt": "2026-11-03T03:49:25.182Z",
+  "checkedAt": "2026-11-03T07:00:59.159Z",
   "nightStart": "17:00",
   "nightFormat": 2,
   "hatsukaichiStale": false,
-  "hatsukaichiAt": "2026-11-03T03:49:25.182Z",
+  "hatsukaichiAt": "2026-11-03T07:00:59.159Z",
   "holidays": [
     "2026-11-23",
     "2027-01-01",
@@ -2098,11 +2098,11 @@
     },
     {
       "title": "2026年11月～2027年1月観音新町運動広場予約状況（11/2現在）",
-      "url": "https://shinko-sports.jp/info/wp-content/uploads/2026/02/%E6%9C%88%E9%96%93%E4%BA%88%E5%AE%9A%E8%A1%A811%E6%9C%882%E6%97%A5%E7%8F%BE%E5%9C%A8-1.pdf"
+      "url": "https://shinko-sports.jp/info/wp-content/uploads/2026/02/%E6%9C%88%E9%96%93%E4%BA%88%E5%AE%9A%E8%A1%A811%E6%9C%882%E6%97%A5%E7%8F%BE%E5%9C%A8-2.pdf"
     }
   ],
   "kanonSchedule": {
-    "url": "https://shinko-sports.jp/info/wp-content/uploads/2026/02/%E6%9C%88%E9%96%93%E4%BA%88%E5%AE%9A%E8%A1%A811%E6%9C%882%E6%97%A5%E7%8F%BE%E5%9C%A8-1.pdf",
+    "url": "https://shinko-sports.jp/info/wp-content/uploads/2026/02/%E6%9C%88%E9%96%93%E4%BA%88%E5%AE%9A%E8%A1%A811%E6%9C%882%E6%97%A5%E7%8F%BE%E5%9C%A8-2.pdf",
     "title": "2026年11月～2027年1月観音新町運動広場予約状況（11/2現在）",
     "byDate": {
       "2026-11-01": {
@@ -2414,9 +2414,7 @@
         "A": [
           "17:00-18:00"
         ],
-        "B": [
-          "19:00-20:00"
-        ],
+        "B": [],
         "C": [
           "17:00-18:00"
         ],
