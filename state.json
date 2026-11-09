@@ -1,9 +1,9 @@
 {
-  "checkedAt": "2026-11-09T09:57:39.733Z",
+  "checkedAt": "2026-11-09T13:03:24.520Z",
   "nightStart": "17:00",
   "nightFormat": 2,
   "hatsukaichiStale": false,
-  "hatsukaichiAt": "2026-11-09T09:57:39.733Z",
+  "hatsukaichiAt": "2026-11-09T13:03:24.520Z",
   "holidays": [
     "2026-11-23",
     "2027-01-01",
@@ -1195,7 +1195,7 @@
   "hatsukaichi": {
     "greenfield": {
       "2026-11-10": [
-        "10:00-16:00",
+        "09:00-16:00",
         "21:00-21:30"
       ],
       "2026-11-11": [
