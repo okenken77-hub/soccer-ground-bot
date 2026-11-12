@@ -1,8 +1,8 @@
 {
-  "checkedAt": "2026-11-12T01:03:09.237Z",
+  "checkedAt": "2026-11-12T03:53:00.540Z",
   "nightStart": "17:00",
   "nightFormat": 2,
-  "hatsukaichiStale": false,
+  "hatsukaichiStale": true,
   "hatsukaichiAt": "2026-11-12T01:03:09.237Z",
   "holidays": [
     "2026-11-23",
